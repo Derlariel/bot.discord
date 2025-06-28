@@ -100,7 +100,13 @@ async def play(ctx, *, query: str):
         'format': 'bestaudio/best',
         'quiet': True,
         'default_search': 'ytsearch',
-        'noplaylist': True
+        'noplaylist': True,
+        'cookiefile': '/home/kongphob/bot.discord/cookies.txt',
+        'postprocessors': [{
+            'key': 'FFmpegExtractAudio',
+            'preferredcodec': 'mp3',
+            'preferredquality': '192',
+        }],
     }
 
     try:
