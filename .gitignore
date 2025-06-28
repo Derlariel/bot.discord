@@ -1,0 +1,5 @@
+.env
+Bot/.env
+*.pem
+venv/
+.venv/
