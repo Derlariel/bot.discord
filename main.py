@@ -6,6 +6,10 @@ from dotenv import load_dotenv
 import yt_dlp
 import functools
 import ffmpeg
+import spotipy
+from spotipy.oauth2 import SpotifyClientCredentials
+
+sp = spotipy.Spotify(auth_manager=SpotifyClientCredentials())
 
 load_dotenv()
 token = os.getenv("discord_token")
@@ -81,6 +85,7 @@ async def play_next(ctx):
         if ctx.voice_client:
             await ctx.voice_client.disconnect()
 
+
 @bot.command()
 async def play(ctx, *, query: str):
     if ctx.author.voice is None:
@@ -96,6 +101,20 @@ async def play(ctx, *, query: str):
             await ctx.voice_client.move_to(voice_channel)
         vc = ctx.voice_client
 
+    if "open.spotify.com" in query:
+        try:
+            if "track" in query:
+                track_id = query.split("/")[-1].split("?")[0]
+                track = sp.track(track_id)
+                query = f"{track['name']} {track['artists'][0]['name']}"
+            else:
+                await ctx.send("❌ ตอนนี้รองรับแค่ Spotify track link นะ")
+                return
+        except Exception as e:
+            await ctx.send(f"❌ อ่าน Spotify ไม่ได้: {e}")
+            return
+
+    # yt-dlp ตามปกติ
     ydl_opts = {
         'format': 'bestaudio/best',
         'quiet': True,
@@ -133,6 +152,7 @@ async def play(ctx, *, query: str):
 
     except Exception as e:
         await ctx.send(f"❌ เกิดข้อผิดพลาด: {e}")
+
 
 @bot.command()
 async def stop(ctx):
