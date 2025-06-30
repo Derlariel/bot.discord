@@ -4,15 +4,20 @@ from discord.ext import commands
 import os
 from dotenv import load_dotenv
 import yt_dlp
-import functools
-import ffmpeg
 import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
 
-sp = spotipy.Spotify(auth_manager=SpotifyClientCredentials())
-
 load_dotenv()
 token = os.getenv("discord_token")
+
+# กำหนด Client ID/Secret ของ Spotify (ต้องตั้งใน env หรือใส่ตรงนี้)
+SPOTIFY_CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID")
+SPOTIFY_CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET")
+
+if not SPOTIFY_CLIENT_ID or not SPOTIFY_CLIENT_SECRET:
+    raise Exception("กรุณาตั้ง SPOTIFY_CLIENT_ID และ SPOTIFY_CLIENT_SECRET ใน .env ด้วย")
+
+sp = spotipy.Spotify(auth_manager=SpotifyClientCredentials(client_id=SPOTIFY_CLIENT_ID, client_secret=SPOTIFY_CLIENT_SECRET))
 
 bot = commands.Bot(command_prefix='!!', intents=discord.Intents.all())
 
@@ -39,7 +44,6 @@ async def on_member_join(member):
         await member.create_dm()
     await member.dm_channel.send(text)
 
-
 @bot.event
 async def on_member_remove(member):
     channel = bot.get_channel(1388487145064235079)
@@ -59,7 +63,7 @@ def get_queue(guild_id):
 
 async def play_next(ctx):
     queue = get_queue(ctx.guild.id)
-    if len(queue) > 0:
+    if queue:
         url, title = queue.pop(0)
         source = discord.FFmpegPCMAudio(url)
 
@@ -85,7 +89,6 @@ async def play_next(ctx):
         if ctx.voice_client:
             await ctx.voice_client.disconnect()
 
-
 @bot.command()
 async def play(ctx, *, query: str):
     if ctx.author.voice is None:
@@ -101,26 +104,37 @@ async def play(ctx, *, query: str):
             await ctx.voice_client.move_to(voice_channel)
         vc = ctx.voice_client
 
+    search_queries = []
+
     if "open.spotify.com" in query:
         try:
             if "track" in query:
+                # กรณีลิงก์ Spotify track
                 track_id = query.split("/")[-1].split("?")[0]
                 track = sp.track(track_id)
-                query = f"{track['name']} {track['artists'][0]['name']}"
+                search_queries.append(f"{track['name']} {track['artists'][0]['name']}")
+            elif "playlist" in query:
+                # กรณีลิงก์ Spotify playlist
+                playlist_id = query.split("/")[-1].split("?")[0]
+                results = sp.playlist_items(playlist_id)
+                for item in results['items']:
+                    track = item['track']
+                    search_queries.append(f"{track['name']} {track['artists'][0]['name']}")
             else:
-                await ctx.send("❌ ตอนนี้รองรับแค่ Spotify track link นะ")
+                await ctx.send("❌ ตอนนี้รองรับแค่ Spotify track กับ playlist link นะ")
                 return
         except Exception as e:
             await ctx.send(f"❌ อ่าน Spotify ไม่ได้: {e}")
             return
+    else:
+        # ถ้าไม่ใช่ลิงก์ Spotify ก็ search ตามปกติ
+        search_queries.append(query)
 
-    # yt-dlp ตามปกติ
     ydl_opts = {
         'format': 'bestaudio/best',
         'quiet': True,
         'default_search': 'ytsearch',
         'noplaylist': True,
-        'cookiefile': '/home/kongphob/bot.discord/cookies.txt',
         'postprocessors': [{
             'key': 'FFmpegExtractAudio',
             'preferredcodec': 'mp3',
@@ -129,23 +143,18 @@ async def play(ctx, *, query: str):
     }
 
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(query, download=False)
-            if 'entries' in info:
-                info = info['entries'][0]
-
-            audio_url = info['url']
-            title = info.get('title', 'Unknown Title')
-
         queue = get_queue(ctx.guild.id)
-        queue.append((audio_url, title))
+        for q in search_queries:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(q, download=False)
+                if 'entries' in info:
+                    info = info['entries'][0]
 
-        embed = discord.Embed(
-            title="✅ Added to Queue",
-            description=f"[{title}](https://www.youtube.com/watch?v={info['id']})",
-            color=0xadf542
-        )
-        await ctx.send(embed=embed)
+                audio_url = info['url']
+                title = info.get('title', 'Unknown Title')
+
+            queue.append((audio_url, title))
+            await ctx.send(f"✅ Added to Queue: [{title}](https://www.youtube.com/watch?v={info['id']})")
 
         if not vc.is_playing():
             await play_next(ctx)
